@@ -7,37 +7,51 @@
   <meta name="referrer" content="no-referrer">
   <title>Benny Dashboard</title>
   <style>
-    :root { --bg: #fff; --text: #222; --muted: #666; --line: #ccc; --accent: #2563eb; --bad: #b42318; }
+    :root { --bg: #fff; --text: #222; --muted: #666; --line: #ccc; --accent: #2563eb; --bad: #b42318; --ok: #067647; }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #111; --text: #eee; --muted: #aaa; --line: #444; --accent: #7aa7ff; --bad: #ff8a80; }
+      :root { --bg: #111; --text: #eee; --muted: #aaa; --line: #444; --accent: #7aa7ff; --bad: #ff8a80; --ok: #6ce9a6; }
     }
     body { font-family: system-ui, sans-serif; max-width: 560px; margin: 48px auto; padding: 0 16px;
            line-height: 1.5; color: var(--text); background: var(--bg); }
-    p { margin: 0 0 12px; }
+    p, ol { margin: 0 0 12px; }
+    ol { padding-left: 20px; }
     .muted { color: var(--muted); font-size: 0.9rem; }
     label { display: block; font-weight: 600; margin-bottom: 6px; }
     input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line);
             border-radius: 8px; background: var(--bg); color: var(--text); }
-    button { margin-top: 10px; font: inherit; padding: 10px 16px; border: 0; border-radius: 8px;
-             background: var(--accent); color: #fff; cursor: pointer; }
+    button, .btn { display: inline-block; margin-top: 10px; font: inherit; padding: 10px 16px; border: 0;
+                   border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; }
     a { color: var(--accent); }
     .err { color: var(--bad); }
+    .ok { color: var(--ok); font-weight: 600; }
   </style>
 </head>
 <body>
-  <!-- The dashboard's address is never in this public page: each device saves it once, in its own browser. -->
+  <!-- The dashboard's address is never in this public page. It lives in each device's own bookmark
+       (after the #, which browsers never send to the server) and, as a fallback, in this browser's storage. -->
   <p id="status">Opening the dashboard…</p>
 
   <form id="setup" hidden>
-    <p>This device hasn't opened the dashboard from here before.</p>
+    <p>Paste the dashboard address once to set up this device.</p>
     <label for="addr">Dashboard address</label>
     <input id="addr" type="url" inputmode="url" autocomplete="off" spellcheck="false"
            placeholder="https://….ts.net:8443/dashboard" required>
     <p class="err" id="err" hidden></p>
-    <button type="submit">Save and open</button>
-    <p class="muted">Paste the full dashboard address once. It's remembered only in this browser.
-      The dashboard itself only loads on devices connected to the household Tailscale network.</p>
+    <button type="submit">Continue</button>
+    <p class="muted">The dashboard itself only loads on devices connected to the household Tailscale network.</p>
   </form>
+
+  <div id="done" hidden>
+    <p class="ok">Almost done: save this page now so it always works.</p>
+    <p>The address is now part of this page's link, so a bookmark or Home Screen icon will open the dashboard every time,
+      even after the phone clears browser data.</p>
+    <ol>
+      <li><b>iPhone (Safari):</b> tap Share, then <i>Add to Home Screen</i>.</li>
+      <li><b>Android (Chrome):</b> tap ⋮, then <i>Add to Home screen</i>.</li>
+      <li><b>Computer:</b> bookmark this page.</li>
+    </ol>
+    <a class="btn" id="open" href="#">Open the dashboard</a>
+  </div>
 
   <p class="muted" id="change" hidden><a href="?reset">Use a different address</a></p>
 
@@ -52,38 +66,60 @@
           return u.protocol === "https:" && /\.ts\.net$/i.test(u.hostname) ? u.href : null;
         } catch (e) { return null; }
       }
+      function fromHash() {
+        var h = location.hash.slice(1);
+        if (!h) return "";
+        try { return decodeURIComponent(h); } catch (e) { return h; }
+      }
       function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
-      function save(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
+      function save(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
       function forget() { try { localStorage.removeItem(KEY); } catch (e) {} }
       function go(url) { location.replace(url); }
 
       var setup = document.getElementById("setup");
       var status = document.getElementById("status");
+      var err = document.getElementById("err");
 
+      function showSetup(message) {
+        status.hidden = true;
+        setup.hidden = false;
+        if (message) { err.textContent = message; err.hidden = false; }
+      }
+
+      // ?reset forgets everything and starts over.
       if (location.search.indexOf("reset") !== -1) {
         forget();
         history.replaceState(null, "", location.pathname);
+        showSetup();
+      } else {
+        // 1. A bookmark or Home Screen icon carries the address after the # (never sent to GitHub).
+        var raw = fromHash();
+        if (raw) {
+          var fromLink = valid(raw);
+          if (fromLink) { save(fromLink); go(fromLink); return; }
+          showSetup("This link's address isn't a dashboard address. Paste it again below.");
+        } else {
+          // 2. Fallback for older bookmarks: the address this browser saved before (phones may clear it).
+          var saved = valid(load());
+          if (saved) { go(saved); document.getElementById("change").hidden = false; return; }
+          showSetup();
+        }
       }
 
-      var saved = valid(load());
-      if (saved) { go(saved); document.getElementById("change").hidden = false; return; }
-
-      status.hidden = true;
-      setup.hidden = false;
       setup.addEventListener("submit", function (ev) {
         ev.preventDefault();
-        var err = document.getElementById("err");
         var url = valid(document.getElementById("addr").value);
         if (!url) {
           err.textContent = "That doesn't look like the dashboard address. It should start with https:// and contain .ts.net.";
           err.hidden = false;
           return;
         }
-        if (!save(url)) {
-          err.textContent = "This browser won't save it (private browsing?). Opening it this once.";
-          err.hidden = false;
-        }
-        go(url);
+        save(url);
+        // Put the address into this page's own link, so saving the page keeps it for good.
+        history.replaceState(null, "", location.pathname + "#" + url);
+        document.getElementById("open").href = url;
+        setup.hidden = true;
+        document.getElementById("done").hidden = false;
       });
     })();
   </script>
