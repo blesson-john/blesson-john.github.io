@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Benny Dashboard</title>
+  <style>
+    :root { --bg: #fff; --text: #222; --muted: #666; --line: #ccc; --accent: #2563eb; --bad: #b42318; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111; --text: #eee; --muted: #aaa; --line: #444; --accent: #7aa7ff; --bad: #ff8a80; }
+    }
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 48px auto; padding: 0 16px;
+           line-height: 1.5; color: var(--text); background: var(--bg); }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line);
+            border-radius: 8px; background: var(--bg); color: var(--text); }
+    button { margin-top: 10px; font: inherit; padding: 10px 16px; border: 0; border-radius: 8px;
+             background: var(--accent); color: #fff; cursor: pointer; }
+    a { color: var(--accent); }
+    .err { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <!-- The dashboard's address is never in this public page: each device saves it once, in its own browser. -->
+  <p id="status">Opening the dashboard…</p>
+
+  <form id="setup" hidden>
+    <p>This device hasn't opened the dashboard from here before.</p>
+    <label for="addr">Dashboard address</label>
+    <input id="addr" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+           placeholder="https://….ts.net:8443/dashboard" required>
+    <p class="err" id="err" hidden></p>
+    <button type="submit">Save and open</button>
+    <p class="muted">Paste the full dashboard address once. It's remembered only in this browser.
+      The dashboard itself only loads on devices connected to the household Tailscale network.</p>
+  </form>
+
+  <p class="muted" id="change" hidden><a href="?reset">Use a different address</a></p>
+
+  <script>
+    (function () {
+      var KEY = "benny_dashboard_url";
+
+      // Only Tailscale HTTPS addresses, so a crafted link can't turn this page into a redirect to anywhere.
+      function valid(raw) {
+        try {
+          var u = new URL(String(raw).trim());
+          return u.protocol === "https:" && /\.ts\.net$/i.test(u.hostname) ? u.href : null;
+        } catch (e) { return null; }
+      }
+      function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+      function save(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
+      function forget() { try { localStorage.removeItem(KEY); } catch (e) {} }
+      function go(url) { location.replace(url); }
+
+      var setup = document.getElementById("setup");
+      var status = document.getElementById("status");
+
+      if (location.search.indexOf("reset") !== -1) {
+        forget();
+        history.replaceState(null, "", location.pathname);
+      }
+
+      var saved = valid(load());
+      if (saved) { go(saved); document.getElementById("change").hidden = false; return; }
+
+      status.hidden = true;
+      setup.hidden = false;
+      setup.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var err = document.getElementById("err");
+        var url = valid(document.getElementById("addr").value);
+        if (!url) {
+          err.textContent = "That doesn't look like the dashboard address. It should start with https:// and contain .ts.net.";
+          err.hidden = false;
+          return;
+        }
+        if (!save(url)) {
+          err.textContent = "This browser won't save it (private browsing?). Opening it this once.";
+          err.hidden = false;
+        }
+        go(url);
+      });
+    })();
+  </script>
+</body>
+</html>
